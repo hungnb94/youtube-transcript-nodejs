@@ -50,6 +50,15 @@ export class YoutubeTranscriptNotAvailableLanguageError extends YoutubeTranscrip
 export interface TranscriptConfig {
   lang?: string;
 }
+
+export interface CaptionTrack {
+  baseUrl: string;
+  vssId: string;
+  languageCode: string;
+  kind?: string;
+  isTranslatable: boolean;
+}
+
 export interface TranscriptResponse {
   text: string;
   duration: number;
@@ -70,15 +79,58 @@ export class YoutubeTranscript {
     videoId: string,
     config?: TranscriptConfig
   ): Promise<TranscriptResponse[]> {
+    const captionTracks = await this.fetchCaptionTracks(videoId, config);
+
+    if (
+      config?.lang &&
+      !captionTracks.some(
+        (track) => track.languageCode === config?.lang
+      )
+    ) {
+      throw new YoutubeTranscriptNotAvailableLanguageError(
+        config?.lang,
+        captionTracks.map((track) => track.languageCode),
+        videoId
+      );
+    }
+
+    const transcriptURL = (
+      config?.lang
+        ? captionTracks.find(
+            (track) => track.languageCode === config?.lang
+          )
+        : captionTracks[0]
+    ).baseUrl;
+
+    const transcriptResponse = await fetch(transcriptURL, {
+      headers: {
+        ...(config?.lang && { 'Accept-Language': config.lang }),
+        'User-Agent': USER_AGENT,
+      },
+    });
+    if (!transcriptResponse.ok) {
+      throw new YoutubeTranscriptNotAvailableError(videoId);
+    }
+    const transcriptBody = await transcriptResponse.text();
+    const results = [...transcriptBody.matchAll(RE_XML_TRANSCRIPT)];
+    return results.map((result) => ({
+      text: result[3],
+      duration: parseFloat(result[2]),
+      offset: parseFloat(result[1]),
+      lang: config?.lang ?? captionTracks[0].languageCode,
+    }));
+  }
+
+  public static async fetchCaptionTracks(videoId: string, config: TranscriptConfig): Promise<CaptionTrack[]> {
     const identifier = this.retrieveVideoId(videoId);
     const videoPageResponse = await fetch(
-      `https://www.youtube.com/watch?v=${identifier}`,
-      {
-        headers: {
-          ...(config?.lang && { 'Accept-Language': config.lang }),
-          'User-Agent': USER_AGENT,
-        },
-      }
+        `https://www.youtube.com/watch?v=${identifier}`,
+        {
+          headers: {
+            ...(config?.lang && {'Accept-Language': config.lang}),
+            'User-Agent': USER_AGENT,
+          },
+        }
     );
     const videoPageBody = await videoPageResponse.text();
 
@@ -97,7 +149,7 @@ export class YoutubeTranscript {
     const captions = (() => {
       try {
         return JSON.parse(
-          splittedHTML[1].split(',"videoDetails')[0].replace('\n', '')
+            splittedHTML[1].split(',"videoDetails')[0].replace('\n', '')
         );
       } catch (e) {
         return undefined;
@@ -111,45 +163,7 @@ export class YoutubeTranscript {
     if (!('captionTracks' in captions)) {
       throw new YoutubeTranscriptNotAvailableError(videoId);
     }
-
-    if (
-      config?.lang &&
-      !captions.captionTracks.some(
-        (track) => track.languageCode === config?.lang
-      )
-    ) {
-      throw new YoutubeTranscriptNotAvailableLanguageError(
-        config?.lang,
-        captions.captionTracks.map((track) => track.languageCode),
-        videoId
-      );
-    }
-
-    const transcriptURL = (
-      config?.lang
-        ? captions.captionTracks.find(
-            (track) => track.languageCode === config?.lang
-          )
-        : captions.captionTracks[0]
-    ).baseUrl;
-
-    const transcriptResponse = await fetch(transcriptURL, {
-      headers: {
-        ...(config?.lang && { 'Accept-Language': config.lang }),
-        'User-Agent': USER_AGENT,
-      },
-    });
-    if (!transcriptResponse.ok) {
-      throw new YoutubeTranscriptNotAvailableError(videoId);
-    }
-    const transcriptBody = await transcriptResponse.text();
-    const results = [...transcriptBody.matchAll(RE_XML_TRANSCRIPT)];
-    return results.map((result) => ({
-      text: result[3],
-      duration: parseFloat(result[2]),
-      offset: parseFloat(result[1]),
-      lang: config?.lang ?? captions.captionTracks[0].languageCode,
-    }));
+    return captions.captionTracks;
   }
 
   /**
