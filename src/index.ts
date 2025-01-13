@@ -102,14 +102,18 @@ export class YoutubeTranscript {
         : captionTracks[0]
     ).baseUrl;
 
+    return await this.getTranscript(transcriptURL);
+  }
+
+  public static async getTranscript(transcriptURL: string) {
     const transcriptResponse = await fetch(transcriptURL, {
       headers: {
-        ...(config?.lang && { 'Accept-Language': config.lang }),
         'User-Agent': USER_AGENT,
       },
     });
+    const params = new URLSearchParams(new URL(transcriptURL).search);
     if (!transcriptResponse.ok) {
-      throw new YoutubeTranscriptNotAvailableError(videoId);
+      throw new YoutubeTranscriptNotAvailableError(params.get("v"));
     }
     const transcriptBody = await transcriptResponse.text();
     const results = [...transcriptBody.matchAll(RE_XML_TRANSCRIPT)];
@@ -117,7 +121,7 @@ export class YoutubeTranscript {
       text: result[3],
       duration: parseFloat(result[2]),
       offset: parseFloat(result[1]),
-      lang: config?.lang ?? captionTracks[0].languageCode,
+      lang: params.get("lang"),
     }));
   }
 
