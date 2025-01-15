@@ -59,11 +59,21 @@ export interface CaptionTrack {
   isTranslatable: boolean;
 }
 
+export interface VideoInfo {
+  captionTracks: CaptionTrack[];
+  relatedVideoIds: string[];
+}
+
 export interface TranscriptResponse {
   text: string;
   duration: number;
   offset: number;
   lang?: string;
+}
+
+export interface VideoTranscript {
+    transcript: TranscriptResponse[];
+    relatedVideoIds: string[];
 }
 
 /**
@@ -78,8 +88,9 @@ export class YoutubeTranscript {
   public static async fetchTranscript(
     videoId: string,
     config?: TranscriptConfig
-  ): Promise<TranscriptResponse[]> {
-    const captionTracks = await this.fetchCaptionTracks(videoId, config);
+  ): Promise<VideoTranscript> {
+    const videoTrack = await this.fetchVideoInfo(videoId, config);
+    const captionTracks = videoTrack.captionTracks;
 
     if (
       config?.lang &&
@@ -102,10 +113,14 @@ export class YoutubeTranscript {
         : captionTracks[0]
     ).baseUrl;
 
-    return await this.getTranscript(transcriptURL);
+    const transcript = await this.getTranscript(transcriptURL);
+    return {
+        transcript: transcript,
+        relatedVideoIds: videoTrack.relatedVideoIds,
+    }
   }
 
-  public static async getTranscript(transcriptURL: string) {
+  public static async getTranscript(transcriptURL: string): Promise<TranscriptResponse[]> {
     const transcriptResponse = await fetch(transcriptURL, {
       headers: {
         'User-Agent': USER_AGENT,
@@ -125,7 +140,7 @@ export class YoutubeTranscript {
     }));
   }
 
-  public static async fetchCaptionTracks(videoId: string, config: TranscriptConfig): Promise<CaptionTrack[]> {
+  public static async fetchVideoInfo(videoId: string, config?: TranscriptConfig): Promise<VideoInfo> {
     const identifier = this.retrieveVideoId(videoId);
     const videoPageResponse = await fetch(
         `https://www.youtube.com/watch?v=${identifier}`,
@@ -167,7 +182,22 @@ export class YoutubeTranscript {
     if (!('captionTracks' in captions)) {
       throw new YoutubeTranscriptNotAvailableError(videoId);
     }
-    return captions.captionTracks;
+    const videoIds = this.getVideoIds(videoPageBody, videoId);
+    return { captionTracks: captions.captionTracks, relatedVideoIds: videoIds };
+  }
+
+  private static getVideoIds(videoPageBody: string, videoId: string): string[] {
+    return [...new Set([...videoPageBody.matchAll(/"url":"\/watch\?v=([^"]+)"/g)]
+        .map(item => item[1])
+        .map(item => {
+          const index = item.indexOf('\\u0026');
+          if (index !== -1) {
+            return item.substring(0, index);
+          }
+          return item;
+        })
+        .filter(item => item !== videoId)
+    )]
   }
 
   /**
