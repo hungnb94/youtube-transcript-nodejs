@@ -26,9 +26,19 @@ export interface CaptionTrack {
     kind?: string;
     isTranslatable: boolean;
 }
+export interface RelatedVideo {
+    videoId: string;
+    title: string;
+    thumbnailUrl: string;
+    lengthText: string;
+    channelThumbnailUrl: string;
+    viewCount: number;
+    channelId: string;
+    channelText: string;
+}
 export interface VideoInfo {
     captionTracks: CaptionTrack[];
-    relatedVideoIds: string[];
+    relatedVideos: RelatedVideo[];
 }
 export interface TranscriptResponse {
     text: string;
@@ -38,7 +48,7 @@ export interface TranscriptResponse {
 }
 export interface VideoTranscript {
     transcript: TranscriptResponse[];
-    relatedVideoIds: string[];
+    relatedVideos: RelatedVideo[];
 }
 /**
  * Class to retrieve transcript if exist
@@ -52,7 +62,7 @@ export declare class YoutubeTranscript {
     static fetchTranscript(videoId: string, config?: TranscriptConfig): Promise<VideoTranscript>;
     static getTranscript(transcriptURL: string): Promise<TranscriptResponse[]>;
     static fetchVideoInfo(videoId: string, config?: TranscriptConfig): Promise<VideoInfo>;
-    private static getVideoIds;
+    private static getRelatedVideos;
     /**
      * Retrieve video id from url or string
      * @param videoId video url or video id

@@ -56,6 +56,10 @@ class YoutubeTranscriptNotAvailableLanguageError extends YoutubeTranscriptError 
         super(`No transcripts are available in ${lang} this video (${videoId}). Available languages: ${availableLangs.join(', ')}`);
     }
 }
+function convertViewCount(viewCount) {
+    const cleaned = viewCount.replace(/[^\d.]/g, '');
+    return parseInt(cleaned.replace(/\./g, ''), 10);
+}
 /**
  * Class to retrieve transcript if exist
  */
@@ -79,7 +83,7 @@ class YoutubeTranscript {
             const transcript = yield this.getTranscript(transcriptURL);
             return {
                 transcript: transcript,
-                relatedVideoIds: videoTrack.relatedVideoIds,
+                relatedVideos: videoTrack.relatedVideos,
             };
         });
     }
@@ -136,21 +140,34 @@ class YoutubeTranscript {
             if (!('captionTracks' in captions)) {
                 throw new YoutubeTranscriptNotAvailableError(videoId);
             }
-            const videoIds = this.getVideoIds(videoPageBody, videoId);
-            return { captionTracks: captions.captionTracks, relatedVideoIds: videoIds };
+            const relatedVideos = this.getRelatedVideos(videoPageBody, videoId);
+            return { captionTracks: captions.captionTracks, relatedVideos: relatedVideos };
         });
     }
-    static getVideoIds(videoPageBody, videoId) {
-        return [...new Set([...videoPageBody.matchAll(/"url":"\/watch\?v=([^"]+)"/g)]
-                .map(item => item[1])
-                .map(item => {
-                const index = item.indexOf('\\u0026');
-                if (index !== -1) {
-                    return item.substring(0, index);
-                }
-                return item;
-            })
-                .filter(item => item !== videoId))];
+    static getRelatedVideos(videoPageBody, videoId) {
+        const stringStart = '"twoColumnWatchNextResults":';
+        const stringFinish = '},"currentVideoEndpoint":';
+        const indexStart = videoPageBody.indexOf(stringStart);
+        const indexFinish = videoPageBody.indexOf(stringFinish, indexStart);
+        if (indexStart < 0 || indexFinish < 0) {
+            throw new YoutubeTranscriptError('Not Found Related Videos');
+        }
+        return JSON.parse(videoPageBody.substring(indexStart + stringStart.length, indexFinish))
+            .secondaryResults
+            .secondaryResults
+            .results
+            .filter(item => item.compactVideoRenderer && item.compactVideoRenderer.videoId !== videoId)
+            .map(item => item.compactVideoRenderer)
+            .map((item) => ({
+            videoId: item.videoId,
+            title: item.title.simpleText,
+            thumbnailUrl: item.thumbnail.thumbnails[item.thumbnail.thumbnails.length - 1].url,
+            lengthText: item.lengthText.simpleText,
+            channelThumbnailUrl: item.channelThumbnail.thumbnails[0].url,
+            viewCount: convertViewCount(item.viewCountText.simpleText),
+            channelId: item.longBylineText.runs[0].navigationEndpoint.commandMetadata.webCommandMetadata.url,
+            channelText: item.longBylineText.runs[0].text,
+        }));
     }
     /**
      * Retrieve video id from url or string

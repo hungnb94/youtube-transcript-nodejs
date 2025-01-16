@@ -59,9 +59,20 @@ export interface CaptionTrack {
   isTranslatable: boolean;
 }
 
+export interface RelatedVideo {
+  videoId: string;
+  title: string;
+  thumbnailUrl: string;
+  lengthText: string;
+  channelThumbnailUrl: string;
+  viewCount: number;
+  channelId: string;
+  channelText: string;
+}
+
 export interface VideoInfo {
   captionTracks: CaptionTrack[];
-  relatedVideoIds: string[];
+  relatedVideos: RelatedVideo[];
 }
 
 export interface TranscriptResponse {
@@ -73,7 +84,12 @@ export interface TranscriptResponse {
 
 export interface VideoTranscript {
     transcript: TranscriptResponse[];
-    relatedVideoIds: string[];
+    relatedVideos: RelatedVideo[];
+}
+
+function convertViewCount(viewCount: string): number {
+  const cleaned = viewCount.replace(/[^\d.]/g, '');
+  return parseInt(cleaned.replace(/\./g, ''), 10);
 }
 
 /**
@@ -116,7 +132,7 @@ export class YoutubeTranscript {
     const transcript = await this.getTranscript(transcriptURL);
     return {
         transcript: transcript,
-        relatedVideoIds: videoTrack.relatedVideoIds,
+        relatedVideos: videoTrack.relatedVideos,
     }
   }
 
@@ -182,22 +198,34 @@ export class YoutubeTranscript {
     if (!('captionTracks' in captions)) {
       throw new YoutubeTranscriptNotAvailableError(videoId);
     }
-    const videoIds = this.getVideoIds(videoPageBody, videoId);
-    return { captionTracks: captions.captionTracks, relatedVideoIds: videoIds };
+    const relatedVideos = this.getRelatedVideos(videoPageBody, videoId);
+    return { captionTracks: captions.captionTracks, relatedVideos: relatedVideos };
   }
 
-  private static getVideoIds(videoPageBody: string, videoId: string): string[] {
-    return [...new Set([...videoPageBody.matchAll(/"url":"\/watch\?v=([^"]+)"/g)]
-        .map(item => item[1])
-        .map(item => {
-          const index = item.indexOf('\\u0026');
-          if (index !== -1) {
-            return item.substring(0, index);
-          }
-          return item;
-        })
-        .filter(item => item !== videoId)
-    )]
+  private static getRelatedVideos(videoPageBody: string, videoId: string): RelatedVideo[] {
+    const stringStart = '"twoColumnWatchNextResults":'
+    const stringFinish = '},"currentVideoEndpoint":'
+    const indexStart = videoPageBody.indexOf(stringStart);
+    const indexFinish = videoPageBody.indexOf(stringFinish, indexStart);
+    if (indexStart < 0 || indexFinish < 0) {
+      throw new YoutubeTranscriptError('Not Found Related Videos');
+    }
+    return JSON.parse(videoPageBody.substring(indexStart + stringStart.length, indexFinish))
+        .secondaryResults
+        .secondaryResults
+        .results
+        .filter(item => item.compactVideoRenderer && item.compactVideoRenderer.videoId !== videoId)
+        .map(item => item.compactVideoRenderer)
+        .map((item) => ({
+          videoId: item.videoId,
+          title: item.title.simpleText,
+          thumbnailUrl: item.thumbnail.thumbnails[item.thumbnail.thumbnails.length - 1].url,
+          lengthText: item.lengthText.simpleText,
+          channelThumbnailUrl: item.channelThumbnail.thumbnails[0].url,
+          viewCount: convertViewCount(item.viewCountText.simpleText),
+          channelId: item.longBylineText.runs[0].navigationEndpoint.commandMetadata.webCommandMetadata.url,
+          channelText: item.longBylineText.runs[0].text,
+        }));
   }
 
   /**
