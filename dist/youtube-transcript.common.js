@@ -55,6 +55,9 @@ class YoutubeTranscriptNotAvailableLanguageError extends YoutubeTranscriptError 
     }
 }
 function convertViewCount(viewCount) {
+    if (!viewCount) {
+        return 0;
+    }
     const cleaned = viewCount.replace(/[^\d.]/g, '');
     return parseInt(cleaned.replace(/\./g, ''), 10);
 }
@@ -156,16 +159,19 @@ class YoutubeTranscript {
             .results
             .filter(item => item.compactVideoRenderer && item.compactVideoRenderer.videoId !== videoId)
             .map(item => item.compactVideoRenderer)
-            .map((item) => ({
-            videoId: item.videoId,
-            title: item.title.simpleText,
-            thumbnailUrl: item.thumbnail.thumbnails[item.thumbnail.thumbnails.length - 1].url,
-            lengthText: item.lengthText.simpleText,
-            channelThumbnailUrl: item.channelThumbnail.thumbnails[0].url,
-            viewCount: convertViewCount(item.viewCountText.simpleText),
-            channelId: item.longBylineText.runs[0].navigationEndpoint.commandMetadata.webCommandMetadata.url,
-            channelText: item.longBylineText.runs[0].text,
-        }));
+            .map((item) => {
+            var _a, _b;
+            return ({
+                videoId: item.videoId,
+                title: item.title.simpleText,
+                thumbnailUrl: item.thumbnail.thumbnails[item.thumbnail.thumbnails.length - 1].url,
+                lengthText: (_b = (_a = item.lengthText) === null || _a === void 0 ? void 0 : _a.simpleText) !== null && _b !== void 0 ? _b : "00:00",
+                channelThumbnailUrl: item.channelThumbnail.thumbnails[0].url,
+                viewCount: convertViewCount(item.viewCountText.simpleText),
+                channelId: item.longBylineText.runs[0].navigationEndpoint.commandMetadata.webCommandMetadata.url,
+                channelText: item.longBylineText.runs[0].text,
+            });
+        });
     }
     /**
      * Retrieve video id from url or string

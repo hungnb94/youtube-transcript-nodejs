@@ -87,7 +87,8 @@ export interface VideoTranscript {
     relatedVideos: RelatedVideo[];
 }
 
-function convertViewCount(viewCount: string): number {
+function convertViewCount(viewCount?: string): number {
+  if (!viewCount) { return 0; }
   const cleaned = viewCount.replace(/[^\d.]/g, '');
   return parseInt(cleaned.replace(/\./g, ''), 10);
 }
@@ -220,7 +221,7 @@ export class YoutubeTranscript {
           videoId: item.videoId,
           title: item.title.simpleText,
           thumbnailUrl: item.thumbnail.thumbnails[item.thumbnail.thumbnails.length - 1].url,
-          lengthText: item.lengthText.simpleText,
+          lengthText: item.lengthText?.simpleText ?? "00:00",
           channelThumbnailUrl: item.channelThumbnail.thumbnails[0].url,
           viewCount: convertViewCount(item.viewCountText.simpleText),
           channelId: item.longBylineText.runs[0].navigationEndpoint.commandMetadata.webCommandMetadata.url,
