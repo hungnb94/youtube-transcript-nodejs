@@ -119,6 +119,7 @@ class YoutubeTranscript {
                 headers: Object.assign(Object.assign({}, ((config === null || config === void 0 ? void 0 : config.lang) && { 'Accept-Language': config.lang })), { 'User-Agent': USER_AGENT }),
             });
             const videoPageBody = yield videoPageResponse.text();
+            const relatedVideos = this.getRelatedVideos(videoPageBody, videoId);
             const splittedHTML = videoPageBody.split('"captions":');
             if (splittedHTML.length <= 1) {
                 if (videoPageBody.includes('class="g-recaptcha"')) {
@@ -127,7 +128,7 @@ class YoutubeTranscript {
                 if (!videoPageBody.includes('"playabilityStatus":')) {
                     throw new YoutubeTranscriptVideoUnavailableError(videoId);
                 }
-                throw new YoutubeTranscriptDisabledError(videoId);
+                return { captionTracks: [], relatedVideos };
             }
             const captions = (_a = (() => {
                 try {
@@ -138,12 +139,11 @@ class YoutubeTranscript {
                 }
             })()) === null || _a === void 0 ? void 0 : _a['playerCaptionsTracklistRenderer'];
             if (!captions) {
-                throw new YoutubeTranscriptDisabledError(videoId);
+                return { captionTracks: [], relatedVideos: relatedVideos };
             }
             if (!('captionTracks' in captions)) {
                 throw new YoutubeTranscriptNotAvailableError(videoId);
             }
-            const relatedVideos = this.getRelatedVideos(videoPageBody, videoId);
             return { captionTracks: captions.captionTracks, relatedVideos: relatedVideos };
         });
     }
@@ -153,7 +153,7 @@ class YoutubeTranscript {
         const indexStart = videoPageBody.indexOf(stringStart);
         const indexFinish = videoPageBody.indexOf(stringFinish, indexStart);
         if (indexStart < 0 || indexFinish < 0) {
-            throw new YoutubeTranscriptError('Not Found Related Videos');
+            return [];
         }
         return JSON.parse(videoPageBody.substring(indexStart + stringStart.length, indexFinish))
             .secondaryResults
