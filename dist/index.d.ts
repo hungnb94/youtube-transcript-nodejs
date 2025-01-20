@@ -36,7 +36,14 @@ export interface RelatedVideo {
     channelId: string;
     channelText: string;
 }
+export interface VideoDetails {
+    title: string;
+    desc: string;
+    ownerName: string;
+    ownerUrl: string;
+}
 export interface VideoInfo {
+    videoDetails: VideoDetails;
     captionTracks: CaptionTrack[];
     relatedVideos: RelatedVideo[];
 }
@@ -47,6 +54,7 @@ export interface TranscriptResponse {
     lang?: string;
 }
 export interface VideoTranscript {
+    videoDetails: VideoDetails;
     transcript: TranscriptResponse[];
     relatedVideos: RelatedVideo[];
 }
@@ -63,9 +71,11 @@ export declare class YoutubeTranscript {
     static getTranscript(transcriptURL: string): Promise<TranscriptResponse[]>;
     static fetchVideoInfo(videoId: string, config?: TranscriptConfig): Promise<VideoInfo>;
     private static getRelatedVideos;
+    private static getTwoColumnWatchNextResults;
     /**
      * Retrieve video id from url or string
      * @param videoId video url or video id
      */
     private static retrieveVideoId;
+    private static getVideoDetails;
 }

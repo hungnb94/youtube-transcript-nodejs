@@ -83,6 +83,7 @@ class YoutubeTranscript {
                 : captionTracks[0]).baseUrl;
             const transcript = yield this.getTranscript(transcriptURL);
             return {
+                videoDetails: videoTrack.videoDetails,
                 transcript: transcript,
                 relatedVideos: videoTrack.relatedVideos,
             };
@@ -117,6 +118,7 @@ class YoutubeTranscript {
                 headers: Object.assign(Object.assign({}, ((config === null || config === void 0 ? void 0 : config.lang) && { 'Accept-Language': config.lang })), { 'User-Agent': USER_AGENT }),
             });
             const videoPageBody = yield videoPageResponse.text();
+            const videoDetails = this.getVideoDetails(videoPageBody);
             const relatedVideos = this.getRelatedVideos(videoPageBody, videoId);
             const splittedHTML = videoPageBody.split('"captions":');
             if (splittedHTML.length <= 1) {
@@ -126,7 +128,7 @@ class YoutubeTranscript {
                 if (!videoPageBody.includes('"playabilityStatus":')) {
                     throw new YoutubeTranscriptVideoUnavailableError(videoId);
                 }
-                return { captionTracks: [], relatedVideos };
+                return { videoDetails, captionTracks: [], relatedVideos };
             }
             const captions = (_a = (() => {
                 try {
@@ -137,23 +139,22 @@ class YoutubeTranscript {
                 }
             })()) === null || _a === void 0 ? void 0 : _a['playerCaptionsTracklistRenderer'];
             if (!captions) {
-                return { captionTracks: [], relatedVideos: relatedVideos };
+                return { videoDetails, captionTracks: [], relatedVideos: relatedVideos };
             }
             if (!('captionTracks' in captions)) {
                 throw new YoutubeTranscriptNotAvailableError(videoId);
             }
-            return { captionTracks: captions.captionTracks, relatedVideos: relatedVideos };
+            return { videoDetails, captionTracks: captions.captionTracks, relatedVideos: relatedVideos };
         });
     }
     static getRelatedVideos(videoPageBody, videoId) {
-        const stringStart = '"twoColumnWatchNextResults":';
-        const stringFinish = '},"currentVideoEndpoint":';
-        const indexStart = videoPageBody.indexOf(stringStart);
-        const indexFinish = videoPageBody.indexOf(stringFinish, indexStart);
-        if (indexStart < 0 || indexFinish < 0) {
+        var _a, _b;
+        const data = this.getTwoColumnWatchNextResults(videoPageBody);
+        if (!data)
             return [];
-        }
-        return JSON.parse(videoPageBody.substring(indexStart + stringStart.length, indexFinish))
+        if (!((_b = (_a = data === null || data === void 0 ? void 0 : data.secondaryResults) === null || _a === void 0 ? void 0 : _a.secondaryResults) === null || _b === void 0 ? void 0 : _b.results))
+            return [];
+        return data
             .secondaryResults
             .secondaryResults
             .results
@@ -173,6 +174,16 @@ class YoutubeTranscript {
             });
         });
     }
+    static getTwoColumnWatchNextResults(videoPageBody) {
+        const stringStart = '"twoColumnWatchNextResults":';
+        const stringFinish = '},"currentVideoEndpoint":';
+        const indexStart = videoPageBody.indexOf(stringStart);
+        const indexFinish = videoPageBody.indexOf(stringFinish, indexStart);
+        if (indexStart < 0 || indexFinish < 0) {
+            return undefined;
+        }
+        return JSON.parse(videoPageBody.substring(indexStart + stringStart.length, indexFinish));
+    }
     /**
      * Retrieve video id from url or string
      * @param videoId video url or video id
@@ -186,5 +197,23 @@ class YoutubeTranscript {
             return matchId[1];
         }
         throw new YoutubeTranscriptError('Impossible to retrieve Youtube video ID.');
+    }
+    static getVideoDetails(videoPageBody) {
+        var _a;
+        const data = this.getTwoColumnWatchNextResults(videoPageBody);
+        if (!data)
+            return undefined;
+        const contents = data.results.results.contents;
+        const videoSecondaryInfoRenderer = (_a = contents.find(item => !!item.videoSecondaryInfoRenderer)) === null || _a === void 0 ? void 0 : _a.videoSecondaryInfoRenderer;
+        if (!videoSecondaryInfoRenderer)
+            return undefined;
+        return {
+            title: contents.find(item => !!item.videoPrimaryInfoRenderer)
+                .videoPrimaryInfoRenderer.title.runs[0].text,
+            desc: videoSecondaryInfoRenderer.attributedDescription.content,
+            ownerName: videoSecondaryInfoRenderer.owner.videoOwnerRenderer.title.runs[0].text,
+            ownerUrl: videoSecondaryInfoRenderer.owner.videoOwnerRenderer.title.runs[0].
+                navigationEndpoint.commandMetadata.webCommandMetadata.url,
+        };
     }
 }exports.YoutubeTranscript=YoutubeTranscript;exports.YoutubeTranscriptDisabledError=YoutubeTranscriptDisabledError;exports.YoutubeTranscriptError=YoutubeTranscriptError;exports.YoutubeTranscriptNotAvailableError=YoutubeTranscriptNotAvailableError;exports.YoutubeTranscriptNotAvailableLanguageError=YoutubeTranscriptNotAvailableLanguageError;exports.YoutubeTranscriptTooManyRequestError=YoutubeTranscriptTooManyRequestError;exports.YoutubeTranscriptVideoUnavailableError=YoutubeTranscriptVideoUnavailableError;

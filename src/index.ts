@@ -70,7 +70,15 @@ export interface RelatedVideo {
   channelText: string;
 }
 
+export interface VideoDetails {
+  title: string;
+  desc: string;
+  ownerName: string;
+  ownerUrl: string;
+}
+
 export interface VideoInfo {
+  videoDetails: VideoDetails;
   captionTracks: CaptionTrack[];
   relatedVideos: RelatedVideo[];
 }
@@ -83,8 +91,9 @@ export interface TranscriptResponse {
 }
 
 export interface VideoTranscript {
-    transcript: TranscriptResponse[];
-    relatedVideos: RelatedVideo[];
+  videoDetails: VideoDetails;
+  transcript: TranscriptResponse[];
+  relatedVideos: RelatedVideo[];
 }
 
 function convertViewCount(viewCount?: string): number {
@@ -132,8 +141,9 @@ export class YoutubeTranscript {
 
     const transcript = await this.getTranscript(transcriptURL);
     return {
-        transcript: transcript,
-        relatedVideos: videoTrack.relatedVideos,
+      videoDetails: videoTrack.videoDetails,
+      transcript: transcript,
+      relatedVideos: videoTrack.relatedVideos,
     }
   }
 
@@ -170,6 +180,7 @@ export class YoutubeTranscript {
     );
     const videoPageBody = await videoPageResponse.text();
 
+    const videoDetails = this.getVideoDetails(videoPageBody);
     const relatedVideos = this.getRelatedVideos(videoPageBody, videoId);
     const splittedHTML = videoPageBody.split('"captions":');
 
@@ -180,7 +191,7 @@ export class YoutubeTranscript {
       if (!videoPageBody.includes('"playabilityStatus":')) {
         throw new YoutubeTranscriptVideoUnavailableError(videoId);
       }
-      return { captionTracks: [], relatedVideos }
+      return { videoDetails, captionTracks: [], relatedVideos }
     }
 
     const captions = (() => {
@@ -194,24 +205,20 @@ export class YoutubeTranscript {
     })()?.['playerCaptionsTracklistRenderer'];
 
     if (!captions) {
-      return { captionTracks: [], relatedVideos: relatedVideos };
+      return { videoDetails, captionTracks: [], relatedVideos: relatedVideos };
     }
 
     if (!('captionTracks' in captions)) {
       throw new YoutubeTranscriptNotAvailableError(videoId);
     }
-    return { captionTracks: captions.captionTracks, relatedVideos: relatedVideos };
+    return { videoDetails, captionTracks: captions.captionTracks, relatedVideos: relatedVideos };
   }
 
   private static getRelatedVideos(videoPageBody: string, videoId: string): RelatedVideo[] {
-    const stringStart = '"twoColumnWatchNextResults":'
-    const stringFinish = '},"currentVideoEndpoint":'
-    const indexStart = videoPageBody.indexOf(stringStart);
-    const indexFinish = videoPageBody.indexOf(stringFinish, indexStart);
-    if (indexStart < 0 || indexFinish < 0) {
-      return [];
-    }
-    return JSON.parse(videoPageBody.substring(indexStart + stringStart.length, indexFinish))
+    const data = this.getTwoColumnWatchNextResults(videoPageBody)
+    if (!data) return [];
+    if (!data?.secondaryResults?.secondaryResults?.results) return [];
+    return data
         .secondaryResults
         .secondaryResults
         .results
@@ -229,6 +236,17 @@ export class YoutubeTranscript {
         }));
   }
 
+  private static getTwoColumnWatchNextResults(videoPageBody: string): any {
+    const stringStart = '"twoColumnWatchNextResults":'
+    const stringFinish = '},"currentVideoEndpoint":'
+    const indexStart = videoPageBody.indexOf(stringStart);
+    const indexFinish = videoPageBody.indexOf(stringFinish, indexStart);
+    if (indexStart < 0 || indexFinish < 0) {
+      return undefined;
+    }
+    return JSON.parse(videoPageBody.substring(indexStart + stringStart.length, indexFinish));
+  }
+
   /**
    * Retrieve video id from url or string
    * @param videoId video url or video id
@@ -244,5 +262,22 @@ export class YoutubeTranscript {
     throw new YoutubeTranscriptError(
       'Impossible to retrieve Youtube video ID.'
     );
+  }
+
+  private static getVideoDetails(videoPageBody: string): VideoDetails {
+    const data = this.getTwoColumnWatchNextResults(videoPageBody);
+    if (!data) return undefined;
+    const contents = data.results.results.contents;
+    const videoSecondaryInfoRenderer = contents.find(item => !!item.videoSecondaryInfoRenderer)
+        ?.videoSecondaryInfoRenderer;
+    if (!videoSecondaryInfoRenderer) return undefined;
+    return {
+      title: contents.find(item => !!item.videoPrimaryInfoRenderer)
+          .videoPrimaryInfoRenderer.title.runs[0].text,
+      desc: videoSecondaryInfoRenderer.attributedDescription.content,
+      ownerName: videoSecondaryInfoRenderer.owner.videoOwnerRenderer.title.runs[0].text,
+      ownerUrl: videoSecondaryInfoRenderer.owner.videoOwnerRenderer.title.runs[0].
+          navigationEndpoint.commandMetadata.webCommandMetadata.url,
+    }
   }
 }
